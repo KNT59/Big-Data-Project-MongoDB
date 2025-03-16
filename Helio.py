@@ -274,3 +274,19 @@ result_display.pack(pady=10)
 
 # Start the Tkinter event loop
 window.mainloop()
+
+# Parse command-line arguments
+parser = argparse.ArgumentParser(description="Run MongoDB Queries")
+parser.add_argument("-q1", action="store_true", help="Run Query 1 (requires -id)")
+parser.add_argument("-q2", action="store_true", help="Run Query 2")
+parser.add_argument("-id", type=str, help="Disease ID for Query 1")
+
+args = parser.parse_args()
+
+# Execute the selected query
+if args.q1 and args.id:
+    query_one(args.id)
+elif args.q2:
+    run_query()
+else:
+    print("Usage: script.py -q1 -id <disease_id> OR script.py -q2")
