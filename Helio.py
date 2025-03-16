@@ -106,158 +106,90 @@ def query_one():
     collection = database[collection_name]
 
     disease_id = "Disease::DOID:0050425"
-    # Create the aggregation pipeline
     pipeline = [
         {
-            # Filter INPUT DOCUMENTS
-           "$match": {
+            "$match": {
                 "$or": [
-                    {
-                        "$and": [
-                            # ((metaedge == "CtD" OR metaedge == "CpD") AND target == disease_id)
-                            { "metaedge": { "$in": ["CtD", "CpD"] } },  
-                            { "target": disease_id }         
-                        ]
-                    },
-                    # OR
-                    {
-                        "$and": [
-                            # (metagedge == 'DaG' AND source == disease_id)
-                            { "metaedge": "DaG" },                     
-                            { "source": disease_id }                       
-                        ]
-                    },
-                    # OR
-                    {
-                       "$and": [
-                            # (metagedge == 'DlA' AND source == disease_id)
-                            { "metaedge": "DlA" },                     
-                            { "source": disease_id }                       
-                        ]  
-                    }
-                ]
-            }
-        },
-        { 
-            # Perform a join to the 'nodes' collection based on matching ids (this gets all compound nodes)
-            "$lookup": {
-                "from": "nodes",    # The collection to join to
-                "localField": "source", # The field of input document for joining
-                "foreignField": "id",   # Field in document in the collection specified by "from" as the key to join 
-                "as": "compound_array", # Joined documents from the collection specified by "from" will be added to this array and be passed to next stage
-                "pipeline": [
-                    {
-                        "$match": {
-                            "kind": "Compound"
-                        }
-                    }
-                ]
+                    {"$and": [{"metaedge": {"$in": ["CtD", "CpD"]}}, {"target": disease_id}]},
+                    {"$and": [{"metaedge": "DaG"}, {"source": disease_id}]},
+                    {"$and": [{"metaedge": "DlA"}, {"source": disease_id}]}]
             }
         },
         {
-            # Perform another join to 'nodes' collection based on matching ids (this gets the specified disease node)
-            "$lookup": {
-                "from": "nodes",    # The collection to join to
-                "localField": "target", # The field of input document for joining
-                "foreignField": "id",   # Field in document in the collection specified by "from" as the key to join 
-                "as": "disease_array", # Joined documents from the collection specified by "from" will be added to this array and be passed to next stage
-                "pipeline": [
-                    {
-                        "$match": {
-                            "kind": "Disease"
-                        }
-                    }
-                ]
+            "$group": {
+                "_id": disease_id,
+                "compound_names": {"$addToSet": "$source"},
+                "disease_names": {"$addToSet": "$target"},
+                "gene_names": {"$addToSet": "$target"},   # Fix: Get genes from "target"
+                "anatomy_names": {"$addToSet": "$target"} # Fix: Get anatomy from "target"
             }
         },
         {
-            # Perform another join to 'nodes' collection based on matching ids (this gets the specified disease node)
             "$lookup": {
-                "from": "nodes",    # The collection to join to
-                "localField": "target", # The field of input document for joining
-                "foreignField": "id",   # Field in document in the collection specified by "from" as the key to join 
-                "as": "gene_array", # Joined documents from the collection specified by "from" will be added to this array and be passed to next stage
-                "pipeline": [
-                    {
-                        "$match": {
-                            "kind": "Gene"
-                        }
-                    }
-                ]
+                "from": "nodes",
+                "localField": "compound_names",
+                "foreignField": "id",
+                "as": "compound_array",
+                "pipeline": [{"$match": {"kind": "Compound"}}]
             }
         },
         {
-            # Perform another join to 'nodes' collection based on matching ids (this gets the specified disease node)
             "$lookup": {
-                "from": "nodes",    # The collection to join to
-                "localField": "target", # The field of input document for joining
-                "foreignField": "id",   # Field in document in the collection specified by "from" as the key to join 
-                "as": "anatomy_array", # Joined documents from the collection specified by "from" will be added to this array and be passed to next stage
-                "pipeline": [
-                    {
-                        "$match": {
-                            "kind": "Anatomy"
-                        }
-                    }
-                ]
+                "from": "nodes",
+                "localField": "disease_names",
+                "foreignField": "id",
+                "as": "disease_array",
+                "pipeline": [{"$match": {"kind": "Disease"}}]
             }
         },
-        # {
-        #     # Limits number of documents passed to the next stage of pipeline or output
-        #     "$limit": 5
-        # },
-        # Extract specific output fields
+        {
+            "$lookup": {
+                "from": "nodes",
+                "localField": "gene_names",
+                "foreignField": "id",
+                "as": "gene_array",
+                "pipeline": [{"$match": {"kind": "Gene"}}]
+            }
+        },
+        {
+            "$lookup": {
+                "from": "nodes",
+                "localField": "anatomy_names",
+                "foreignField": "id",
+                "as": "anatomy_array",
+                "pipeline": [{"$match": {"kind": "Anatomy"}}]
+            }
+        },
         {
             "$project": {
                 "_id": 0,
-                "compound_array": {
-                    "$map": {
-                        "input": "$compound_array",
-                        "as": "element",
-                        "in": {
-                            "name": "$$element.name"
-                        }
-                    }
-                },
-                "disease_array": {
-                    "$map": {
-                        "input": "$disease_array",
-                        "as": "element",
-                        "in": {
-                            "name": "$$element.name"
-                        }
-                    }
-                },
-                "gene_array": {
-                    "$map": {
-                        "input": "$gene_array",
-                        "as": "element",
-                        "in": {
-                            "name": "$$element.name"
-                        }
-                    }
-                },
-                "anatomy_array": {
-                    "$map": {
-                        "input": "$anatomy_array",
-                        "as": "element",
-                        "in": {
-                            "name": "$$element.name"
-                        }
-                    }
-                }         
+                "compound_names": {"$map": {"input": "$compound_array", "as": "el", "in": "$$el.name"}},
+                "disease_names": {"$map": {"input": "$disease_array", "as": "el", "in": "$$el.name"}},
+                "gene_names": {"$map": {"input": "$gene_array", "as": "el", "in": "$$el.name"}},
+                "anatomy_names": {"$map": {"input": "$anatomy_array", "as": "el", "in": "$$el.name"}}
             }
         }
     ]
-    # Execute the query and obtain results
-    # The returned type is a CommandCursor object, check the properties and
-    # methods here: https://pymongo.readthedocs.io/en/stable/api/pymongo/command_cursor.html
+
     results = collection.aggregate(pipeline)
-    cnt = 0
+    result_list = []
+
     for result in results:
-        print(result)
-        cnt += 1
-    print(cnt)
+        result_entry = []
+        if result.get("disease_names"):
+            result_entry.append(f"Disease name: {', '.join(result['disease_names'])}")
+        if result.get("compound_names"):
+            result_entry.append(f"Compounds: {', '.join(result['compound_names'])}")
+        if result.get("gene_names"):
+            result_entry.append(f"Genes: {', '.join(result['gene_names'])}")
+        if result.get("anatomy_names"):
+            result_entry.append(f"Anatomy: {', '.join(result['anatomy_names'])}")
+        result_list.append("\n".join(result_entry))
+    
+    print("\n\n".join(result_list))
+
+    #print(result_list)
+
 
 
 def main():
