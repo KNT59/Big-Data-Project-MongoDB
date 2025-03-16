@@ -4,6 +4,8 @@ from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
 from dotenv import load_dotenv
 import os
+import argparse
+import threading
 
 # Macros
 BATCH_SIZE = 10000
@@ -193,8 +195,61 @@ def query_one(disease_id):
     result_display.insert(tk.END, output)
 
     #print(result_list)
-def example_query():
-    query_one()
+#query 2
+def run_query():
+    collection_edges = database["edges"]
+    collection_nodes = database["nodes"]
+
+    pipeline = [
+        {
+            "$match": {"metaedge": "GiG"}  # Interactions between genes
+        },
+        {
+            "$lookup": {
+                "from": "nodes",
+                "localField": "source",
+                "foreignField": "id",
+                "as": "source_node"
+            }
+        },
+        {
+            "$lookup": {
+                "from": "nodes",
+                "localField": "target",
+                "foreignField": "id",
+                "as": "target_node"
+            }
+        },
+        {
+            "$unwind": "$source_node"
+        },
+        {
+            "$unwind": "$target_node"
+        },
+        {
+            "$match": {
+                "source_node.kind": "Compound",
+                "target_node.kind": "Gene"
+            }
+        },
+        {
+            "$group": {
+                "_id": "$source_node.id",
+                "compound_name": {"$first": "$source_node.name"}
+            }
+        }
+    ]
+
+    results = list(collection_edges.aggregate(pipeline))
+    
+    if results:
+        compound_names = "\n".join(result["compound_name"] for result in results)
+    else:
+        compound_names = "No new drugs found."
+
+    # Clear previous results
+    result_display.delete(1.0, tk.END)
+    result_display.insert(tk.END, compound_names)
 # Main GUI window
 window = tk.Tk()
 window.title("MongoDB GUI")
@@ -210,6 +265,8 @@ disease_entry.pack(pady=5)
 # Query button
 query_button = tk.Button(window, text="Run Query 1", command=lambda: query_one(disease_entry.get()), height=2, width=20)
 query_button.pack(pady=10)
+run_button = tk.Button(window, text="Get New Drugs", command=run_query, height=2, width=20)
+run_button.pack(pady=10)
 
 # Results display area
 result_display = tk.Text(window, height=10, width=70)
