@@ -105,7 +105,9 @@ def query_one():
     collection_name = 'edges'
     collection = database[collection_name]
 
-    disease_id = "Disease::DOID:0050425"
+    # CHANGE DISEASE_ID 
+    disease_id = "Disease::DOID:10941"
+
     # Create the aggregation pipeline
     pipeline = [
         {
@@ -258,6 +260,7 @@ def query_one():
         print(result)
         cnt += 1
     print(cnt)
+
 
 
 def main():
