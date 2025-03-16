@@ -1,8 +1,9 @@
+import tkinter as tk
+from tkinter import messagebox
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
 from dotenv import load_dotenv
-import csv
-import os 
+import os
 
 # Macros
 BATCH_SIZE = 10000
@@ -101,11 +102,9 @@ def del_collection(collection_name):
     collection.delete_many({})
 
 # Query 1
-def query_one():
+def query_one(disease_id):
     collection_name = 'edges'
     collection = database[collection_name]
-
-    disease_id = "Disease::DOID:0050425"
     pipeline = [
         {
             "$match": {
@@ -185,33 +184,36 @@ def query_one():
         if result.get("anatomy_names"):
             result_entry.append(f"Anatomy: {', '.join(result['anatomy_names'])}")
         result_list.append("\n".join(result_entry))
-    
+    output = "\n\n".join(result_list)
     print("\n\n".join(result_list))
+    # Clear the previous content in the Text widget
+    result_display.delete(1.0, tk.END)
+
+    # Insert the new result data into the Text widget
+    result_display.insert(tk.END, output)
 
     #print(result_list)
-
-
-
-def main():
-    # Send a ping to confirm a successful connection
-    try:
-        client.admin.command('ping')
-        print("Pinged your deployment. You successfully connected to MongoDB!")
-    except Exception as e:
-        print(e)
-    
-    # Deletes all documents in the collection 'nodes' or 'edges'
-    # del_collection('nodes')
-    # del_collection('edges')
-
-    # Insert nodes and edges (Do not run this since we did it already)
-    # insert_nodes()
-    # insert_edges()
-
-    # Perform query 1
+def example_query():
     query_one()
+# Main GUI window
+window = tk.Tk()
+window.title("MongoDB GUI")
+window.geometry("600x400")
 
-if __name__ == '__main__':
-    main()
+# Disease ID input field
+disease_label = tk.Label(window, text="Enter Disease ID:")
+disease_label.pack(pady=10)
 
+disease_entry = tk.Entry(window, width=50)
+disease_entry.pack(pady=5)
 
+# Query button
+query_button = tk.Button(window, text="Run Query 1", command=lambda: query_one(disease_entry.get()), height=2, width=20)
+query_button.pack(pady=10)
+
+# Results display area
+result_display = tk.Text(window, height=10, width=70)
+result_display.pack(pady=10)
+
+# Start the Tkinter event loop
+window.mainloop()
