@@ -1,8 +1,11 @@
+import tkinter as tk
+from tkinter import messagebox
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
 from dotenv import load_dotenv
-import csv
-import os 
+import os
+import argparse
+import threading
 
 # Macros
 BATCH_SIZE = 10000
@@ -101,11 +104,9 @@ def del_collection(collection_name):
     collection.delete_many({})
 
 # Query 1
-def query_one():
+def query_one(disease_id):
     collection_name = 'edges'
     collection = database[collection_name]
-
-    disease_id = "Disease::DOID:0050425"
     pipeline = [
         {
             "$match": {
@@ -185,34 +186,106 @@ def query_one():
         if result.get("anatomy_names"):
             result_entry.append(f"Anatomy: {', '.join(result['anatomy_names'])}")
         result_list.append("\n".join(result_entry))
-    
+    output = "\n\n".join(result_list)
     print("\n\n".join(result_list))
+    # Clear the previous content in the Text widget
+    result_display.delete(1.0, tk.END)
+
+    # Insert the new result data into the Text widget
+    result_display.insert(tk.END, output)
 
     #print(result_list)
+#query 2
+def run_query():
+    collection_edges = database["edges"]
+    collection_nodes = database["nodes"]
 
+    pipeline = [
+        {
+            "$match": {"metaedge": "GiG"}  # Interactions between genes
+        },
+        {
+            "$lookup": {
+                "from": "nodes",
+                "localField": "source",
+                "foreignField": "id",
+                "as": "source_node"
+            }
+        },
+        {
+            "$lookup": {
+                "from": "nodes",
+                "localField": "target",
+                "foreignField": "id",
+                "as": "target_node"
+            }
+        },
+        {
+            "$unwind": "$source_node"
+        },
+        {
+            "$unwind": "$target_node"
+        },
+        {
+            "$match": {
+                "source_node.kind": "Compound",
+                "target_node.kind": "Gene"
+            }
+        },
+        {
+            "$group": {
+                "_id": "$source_node.id",
+                "compound_name": {"$first": "$source_node.name"}
+            }
+        }
+    ]
 
+    results = list(collection_edges.aggregate(pipeline))  
+    if results:
+        compound_names = "\n".join(result["compound_name"] for result in results)
+    else:
+        compound_names = "No new drugs found."
 
+    # Clear previous results
+    result_display.delete(1.0, tk.END)
+    result_display.insert(tk.END, compound_names)
+# Main GUI window
+window = tk.Tk()
+window.title("MongoDB GUI")
+window.geometry("600x400")
 
-def main():
-    # Send a ping to confirm a successful connection
-    try:
-        client.admin.command('ping')
-        print("Pinged your deployment. You successfully connected to MongoDB!")
-    except Exception as e:
-        print(e)
-    
-    # Deletes all documents in the collection 'nodes' or 'edges'
-    # del_collection('nodes')
-    # del_collection('edges')
+# Disease ID input field
+disease_label = tk.Label(window, text="Enter Disease ID:")
+disease_label.pack(pady=10)
 
-    # Insert nodes and edges (Do not run this since we did it already)
-    # insert_nodes()
-    # insert_edges()
+disease_entry = tk.Entry(window, width=50)
+disease_entry.pack(pady=5)
 
-    # Perform query 1
-    query_one()
+# Query button
+query_button = tk.Button(window, text="Run Query 1", command=lambda: query_one(disease_entry.get()), height=2, width=20)
+query_button.pack(pady=10)
+run_button = tk.Button(window, text="Get New Drugs", command=run_query, height=2, width=20)
+run_button.pack(pady=10)
 
-if __name__ == '__main__':
-    main()
+# Results display area
+result_display = tk.Text(window, height=10, width=70)
+result_display.pack(pady=10)
 
+# Start the Tkinter event loop
+window.mainloop()
 
+# Parse command-line arguments
+parser = argparse.ArgumentParser(description="Run MongoDB Queries")
+parser.add_argument("-q1", action="store_true", help="Run Query 1 (requires -id)")
+parser.add_argument("-q2", action="store_true", help="Run Query 2")
+parser.add_argument("-id", type=str, help="Disease ID for Query 1")
+
+args = parser.parse_args()
+
+# Execute the selected query
+if args.q1 and args.id:
+    query_one(args.id)
+elif args.q2:
+    run_query()
+else:
+    print("Usage: script.py -q1 -id <disease_id> OR script.py -q2")
