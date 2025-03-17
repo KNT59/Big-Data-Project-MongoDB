@@ -3,7 +3,8 @@ from pymongo.server_api import ServerApi
 from dotenv import load_dotenv
 import csv
 import os 
-
+import argparse
+import threading
 # Macros
 BATCH_SIZE = 10000
 
@@ -93,11 +94,11 @@ def insert_edges_with_node(nodes):
     collection.insert_many(insert_docs)
                 
 # Query 1
-def query_one():
+def query_one(disease_id):
     collection_name = 'nodes'
     collection = database[collection_name]
 
-    disease_id = "Disease::DOID:0050425"
+    #disease_id = "Disease::DOID:0050425"
     pipeline = [
         {
             "$match": 
@@ -195,9 +196,15 @@ def query_one():
     results = collection.aggregate(pipeline)
     for r in results:
         print("Disease: ", r['diseases'])
+        output =("Disease: ", r['diseases'])
         print("Compounds: ", r['compounds'])
+        output += ("Compounds: ", r['compounds'])
         print("Genes: ", r['genes'])
+        output += ("Genes: ", r['genes'])
         print("Anatomies: ", r['anatomies'])
+        output += ("Anatomies: ", r['anatomies'])
+
+    return output
 
 
 def query_two():
@@ -295,13 +302,13 @@ def del_collection(collection_name):
     collection = database[collection_name]
     collection.delete_many({})
 
-def main():
+#def main():
     # Send a ping to confirm a successful connection
-    try:
-        client.admin.command('ping')
-        print("Pinged your deployment. You successfully connected to MongoDB!")
-    except Exception as e:
-        print(e)
+    #try:
+        #client.admin.command('ping')
+        #print("Pinged your deployment. You successfully connected to MongoDB!")
+    #except Exception as e:
+        #print(e)
     
     # Deletes all documents in the collection 'nodes' or 'edges'
     # del_collection('nodes')
@@ -311,9 +318,22 @@ def main():
     # insert_edges_with_node(nodes)
 
     # Perform query 1
-    query_one()
+    #query_one("Disease::DOID:9206")
 
-if __name__ == '__main__':
-    main()
 
+# Parse command-line arguments
+parser = argparse.ArgumentParser(description="Run MongoDB Queries")
+parser.add_argument("-q1", action="store_true", help="Run Query 1 (requires -id)")
+#parser.add_argument("-q2", action="store_true", help="Run Query 2")
+parser.add_argument("-id", type=str, help="Disease ID for Query 1")
+
+args = parser.parse_args()
+
+# Execute the selected query
+if args.q1 and args.id:
+    query_one(args.id)
+#if args.q2:
+#   query_two()
+else:
+    print("Usage: Helio_rev.py -q1 -id <disease_id> OR Helio_rev.py -q2")
 
