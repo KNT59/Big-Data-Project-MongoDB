@@ -4,9 +4,6 @@ from dotenv import load_dotenv
 import csv
 import os 
 import argparse
-import threading
-# Macros
-BATCH_SIZE = 10000
 
 # Mappings 
 metaedge_to_relationship = {
