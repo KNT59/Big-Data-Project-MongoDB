@@ -317,16 +317,34 @@ def query_two():
             }
         }
     },
-    # Step 4: Project matchedNames field
     {
-        "$project": {
-            # "matchedNames": 1  # Only include matchedNames in the output
-            'matchedNames': 1,
-            'pairA': 1,
-            'pairB': 1,
-            '_id': 1
+        "$addFields": {
+            "matchedNames": {
+                "$filter": {
+                    "input": "$matchedNames",  # Array to filter
+                    "as": "name",              # Alias for each element in matchedNames
+                    "cond": { "$ne": ["$$name", None] }  # Condition to remove null values
+                }
+            }
         }
-    }
+    },
+    {
+        "$addFields": {
+            "matchedNames": {
+                "$setUnion": [
+                    "$matchedNames",  # The matchedNames array
+                    []                # An empty array to "set" the unique elements from matchedNames
+                ]
+            }
+        }
+    },
+    # Step 4: Project matchedNames field
+    # {
+    #     "$project": {
+    #         # "matchedNames": 1  # Only include matchedNames in the output
+    #         'matchedNames': 1
+    #     }
+    # }
 ]
   
 
