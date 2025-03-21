@@ -203,7 +203,7 @@ def query_one(disease_id):
         print("Anatomies: ", r['anatomies'])
 
 def query_two():
-    collection_name = 'edges'
+    collection_name = 'nodes'
     collection = database[collection_name]
 
     # Construct the aggregation pipeline
@@ -317,32 +317,14 @@ def query_two():
             }
         }
     },
-    {
-        "$addFields": {
-            "matchedNames": {
-                "$filter": {
-                    "input": "$matchedNames",  # Array to filter
-                    "as": "name",              # Alias for each element in matchedNames
-                    "cond": { "$ne": ["$$name", None] }  # Condition to remove null values
-                }
-            }
-        }
-    },
-    {
-        "$addFields": {
-            "matchedNames": {
-                "$setUnion": [
-                    "$matchedNames",  # The matchedNames array
-                    []                # An empty array to "set" the unique elements from matchedNames
-                ]
-            }
-        }
-    },
     # Step 4: Project matchedNames field
     {
         "$project": {
             # "matchedNames": 1  # Only include matchedNames in the output
-            'matchedNames': 1
+            'matchedNames': 1,
+            'pairA': 1,
+            'pairB': 1,
+            '_id': 1
         }
     }
 ]
@@ -352,6 +334,7 @@ def query_two():
     print(results)
     i = 1
     for r in results:
+        print('print')
         compounds = r['matchedNames']
         for c in compounds:
             print(i, ': ', c)
