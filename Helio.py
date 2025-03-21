@@ -4,9 +4,7 @@ from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
 from dotenv import load_dotenv
 from Helio_rev import query_one, query_two
-import os
-import argparse
-import threading
+
 
 def printquery(input):
     result_display.delete(1.0, tk.END)
