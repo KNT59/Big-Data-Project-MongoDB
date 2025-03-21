@@ -38,6 +38,10 @@ uri = "mongodb+srv://{}:{}@mongocluster.xwtr8.mongodb.net/?retryWrites=true&w=ma
 client = MongoClient(uri, server_api=ServerApi('1'))
 db_name = "helio_net_rev"
 database = client[db_name]
+edges_name='edges'
+nodes_name= 'nodes'
+edges_db = database[edges_name]
+nodes_db = database[nodes_name]
 
 node_file = "nodes.tsv"
 edge_file = "edges.tsv"
@@ -92,9 +96,7 @@ def insert_edges_with_node(nodes):
                 
 # Query 1
 def query_one(disease_id):
-    collection_name = 'nodes'
-    collection = database[collection_name]
-
+    collection = nodes_db
     #disease_id = "Disease::DOID:0050425"
     pipeline = [
         {
@@ -201,11 +203,9 @@ def query_one(disease_id):
         print("Anatomies: ", r['anatomies'])
 
 def query_two():
-    collection_name = 'nodes'
+    collection_name = 'edges'
     collection = database[collection_name]
 
-    
-    print("in query two")
     # Construct the aggregation pipeline
     pipeline = [
     # Step 1: Match documents where "kind" is "Gene"
@@ -398,4 +398,6 @@ query_two()
 # #   query_two()
 # else:
 #     print("Usage: Helio_rev.py -q1 -id <disease_id> OR Helio_rev.py -q2")
+
+
 
