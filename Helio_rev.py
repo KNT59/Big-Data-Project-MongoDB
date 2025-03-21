@@ -173,7 +173,7 @@ def query_one(disease_id):
         },
         {
             "$group": {
-                "_id": None,  # Group all documents together (null means no grouping key)
+                "_id": None,  # Group all documents together (None means no grouping key)
                 "compounds": { "$push": "$compound_name" },  # Group all compound names together
                 "genes": { "$push": "$gene_name" },  # Group all gene names together
                 "diseases": { "$push": "$disease_name" },  # Group all disease names together
@@ -208,130 +208,154 @@ def query_two():
     print("in query two")
     # Construct the aggregation pipeline
     pipeline = [
-        # Input documents will fetch specified compounds and anatomies with disease localized to it
-        {
-            "$match": {
-                "$or": [
-                    {
-                        "kind": "Compound",
-                        "$and": [
-                            {
-                                "$and": [
-                                    {
-                                        "edges_out": {
-                                            "$not": {
-                                                "$elemMatch": { 
-                                                    "metaedge": "CtD"
-                                                }
-                                            }
-                                        }
-                                    },
-                                    {
-                                        "edges_out": {
-                                            "$not": {
-                                                "$elemMatch": {
-                                                    "metaedge": "CpD"
-                                                }
-                                            }
-                                        }
-                                    }
-                                ]
-                            },
-                            {
-                                "$or": [
-                                    {
-                                        "edges_out": {
-                                            "$elemMatch": { 
-                                                "metaedge": "CuG"
-                                            }
-                                        }
-                                    },
-                                    {
-                                        "edges_out": {
-                                            "$elemMatch": { 
-                                                "metaedge": "CdG"
-                                            }
-                                        }      
-                                    } 
-                                ]
-                            }
-                        ]
-                    },
-                    {
-                        "$and": [
-                            {
-                                "kind": "Anatomy"
-                            },
-                            {
-                                "edges_in": {
-                                    "$elemMatch": { 
-                                        "metaedge": "DlA"
-                                    }
-                                } 
-                            },
-                            {
-                                "$or": [
-                                    {
-                                        "edges_out": {
-                                            "$elemMatch": {
-                                                "metaedge": "AuG"
-                                            }
-                                        }
-                                    },
-                                    {
-                                        "edges_out": {
-                                            "$elemMatch": {
-                                                "metaedge": "AdG"
-                                            }
-                                        }
-                                    }
-                                ]
-                            }              
+    # Step 1: Match documents where "kind" is "Gene"
+    {
+        "$match": {
+            "kind": "Gene"
+        }
+    },
+    # Step 2: Add Fields - Filter "edges_in" based on "metaedge" values and get the first match
+    {
+        "$addFields": {
+            "pairA": {
+                "$filter": {
+                    "input": "$edges_in",  # Array to filter
+                    "as": "edge",          # Alias for each object in the array
+                    "cond": {
+                        "$or": [  # Combine conditions with $or
+                            { "$eq": ["$$edge.metaedge", "CuG"] },  # Check if metaedge == "CuG"
+                            { "$eq": ["$$edge.metaedge", "CdG"] }
                         ]
                     }
-                    ]
                 }
-        },
-        {
-            "$lookup": {
-                "from": collection_name,  
-                "let": { 
-                    "edges": "$edges_out"  
-                },
-                "pipeline":[
-                    {
-                        "$match": {
-                            "kind": "Gene",
-                            "$and":[
-                                {
-                                    "$expr": {
-                                    "$in": ["$id", "$$edges.id"]  
-                                    }
-                                }
-                            ]
-                        }
-                    },
-                    {
-                        "$match": {
-                            "$expr": {
-                            "$ne": ["$metaedge", { "$arrayElemAt": ["$$edges.metaedge", 0] }] 
-                            }
-                        }
+            },
+            "pairB": {
+                "$filter": {
+                    "input": "$edges_in",  # Array to filter
+                    "as": "edge",          # Alias for each object in the array
+                    "cond": {
+                        "$or": [  # Combine conditions with $or
+                            { "$eq": ["$$edge.metaedge", "AdG"] },  # Check if metaedge == "AdG"
+                            { "$eq": ["$$edge.metaedge", "AuG"] }
+                        ]
                     }
-                ],
-                "as": "matchedCompounds"
-            }
-        },
-        {
-            '$project': {
-                "matchedCompounds"
+                }
             }
         }
-    ]
+    },
+    # Step 3: Add matched names based on conditions between pairA and pairB
+    {
+        "$addFields": {
+            "matchedNames": {
+                "$map": {
+                    "input": "$pairA",  # Iterate over pairA (filtered edges_in)
+                    "as": "inEdge",     # Alias for each edge in pairA
+                    "in": {
+                        "$cond": {
+                            "if": {
+                                "$eq": ["$$inEdge.metaedge", "AdG"]
+                            },
+                            "then": {
+                                "$let": {
+                                    "vars": {
+                                        "adgEdge": {
+                                            "$arrayElemAt": [
+                                                {
+                                                    "$filter": {
+                                                        "input": "$pairB",  # pairB is already filtered
+                                                        "as": "outEdge",
+                                                        "cond": { "$eq": ["$$outEdge.metaedge", "CuG"] }
+                                                    }
+                                                },
+                                                0  # Get the first matching element from pairB
+                                            ]
+                                        }
+                                    },
+                                    "in": {
+                                        "$cond": {
+                                            "if": { "$ne": ["$$adgEdge", None] },  # If a match is found in pairB
+                                            "then": "$$inEdge.source",  # Push name of the inEdge to array
+                                            "else": None  # If no match found, return None
+                                        }
+                                    }
+                                }
+                            },
+                            "else": {
+                                "$cond": {
+                                    "if": { "$eq": ["$$inEdge.metaedge", "CdG"] },
+                                    "then": {
+                                        "$let": {
+                                            "vars": {
+                                                "augEdge": {
+                                                    "$arrayElemAt": [
+                                                        {
+                                                            "$filter": {
+                                                                "input": "$edges_out",  # edges_out array
+                                                                "as": "outEdge",
+                                                                "cond": { "$eq": ["$$outEdge.metaedge", "AuG"] }
+                                                            }
+                                                        },
+                                                        0  # Get the first matching element from edges_out
+                                                    ]
+                                                }
+                                            },
+                                            "in": {
+                                                "$cond": {
+                                                    "if": { "$ne": ["$$augEdge", None] },  # If a match is found in edges_out
+                                                    "then": "$$inEdge.source",  # Push name of the inEdge to array
+                                                    "else": None  # If no match, return None
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "else": None  # If no conditions met, return None
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    {
+        "$addFields": {
+            "matchedNames": {
+                "$filter": {
+                    "input": "$matchedNames",  # Array to filter
+                    "as": "name",              # Alias for each element in matchedNames
+                    "cond": { "$ne": ["$$name", None] }  # Condition to remove null values
+                }
+            }
+        }
+    },
+    {
+        "$addFields": {
+            "matchedNames": {
+                "$setUnion": [
+                    "$matchedNames",  # The matchedNames array
+                    []                # An empty array to "set" the unique elements from matchedNames
+                ]
+            }
+        }
+    },
+    # Step 4: Project matchedNames field
+    {
+        "$project": {
+            # "matchedNames": 1  # Only include matchedNames in the output
+            'matchedNames': 1
+        }
+    }
+]
+  
+
     results = collection.aggregate(pipeline)
     print(results)
+    i = 1
     for r in results:
-        print(r)    
+        compounds = r['matchedNames']
+        for c in compounds:
+            print(i, ': ', c)
+            i +=1
     
 
 # Deletes all documents in the collection
