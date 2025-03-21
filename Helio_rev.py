@@ -38,6 +38,10 @@ uri = "mongodb+srv://{}:{}@mongocluster.xwtr8.mongodb.net/?retryWrites=true&w=ma
 client = MongoClient(uri, server_api=ServerApi('1'))
 db_name = "helio_net_rev"
 database = client[db_name]
+edges_name='edges'
+nodes_name= 'nodes'
+edges_db = database[edges_name]
+nodes_db = database[nodes_name]
 
 node_file = "nodes.tsv"
 edge_file = "edges.tsv"
@@ -92,9 +96,7 @@ def insert_edges_with_node(nodes):
                 
 # Query 1
 def query_one(disease_id):
-    collection_name = 'nodes'
-    collection = database[collection_name]
-
+    collection = nodes_db
     #disease_id = "Disease::DOID:0050425"
     pipeline = [
         {
@@ -205,119 +207,73 @@ def query_one(disease_id):
 
 
 def query_two():
-    collection_name = 'edges'
-    collection = database[collection_name]
-
-    # Construct the aggregation pipeline
+    collection = nodes_db  # Using nodes collection for the query
+    
     pipeline = [
-        # Step 1: Match conditions for filtering
-        {
-            "$match": {
-                "$or": [
-                    # Include compounds if it does not directly treat/palliate disease
-                    # and can upregulates/downregulates genes
-                    {
-                        "kind": "Compound",
-                        "$and": [
-                            {
-                                "edges_out": {
-                                    "$not": {
-                                        "$elemMatch": { 
-                                            "metaedge": { "$in": ["CtD", "CpD"] }
-                                        }
-                                    }
-                                }
-                            },
-                            {
-                                "edges_out": {
-                                    "$elemMatch": {
-                                        "metaedge": { "$in": ["CuG", "CdG"] }
-                                    }
-                                }
-                            }
-                        ]
-                    },
-                    # Include anatomies with upregulate or downregulate in edges_out
-                    {
-                        "kind": "Anatomy",
-                        "edges_out": {
-                            "$elemMatch": {
-                                "metaedge": { "$in": ["AuG", "AdG"] }
-                            }
-                        }
-                    },
-                ]
-            }
-        },
-        # Add conditional checks for upregulate, downregulate conditions and merge compounds
-        {
-            "$addFields": {
-                "compound_up_anatomy_down": {
-                    "$cond": [
-                        {
-                            "$and": [
-                                { "$eq": ["$compound_name", "upregulate"] },  # Compound upregulate
-                                { "$eq": ["$anatomy_name", "downregulate"] }  # Anatomy ownregulate
-                            ]
-                        },
-                        { "$in": [ "$disease_id", "$edges_in.source" ] },  # Check if disease localizes to anatomy
-                        False
+        # Step 1: Match compounds excluding 'palliate' and 'treat' metaedges, and either 'upregulates gene' or 'downregulates gene'
+        {"$match": {
+            "kind": "Compound",
+            "edges_out.metaedge": {"$nin": ["CpD", "CtD"]},  # Exclude 'palliate' and 'treat' metaedges
+            "$or": [
+                {"edges_out.metaedge": "CuG"},  # 'Upregulates gene'
+                {"edges_out.metaedge": "CdG"}   # 'Downregulates gene'
+            ]
+        }},
+        
+        # Step 2: Lookup anatomies that have edges_in being localized by a disease
+        {"$lookup": {
+            "from": "edges",
+            "localField": "id",  # Compound ID
+            "foreignField": "source",  # Source in edges (Compound → Anatomy)
+            "as": "disease_anatomy_edges",
+            "pipeline": [
+                {"$match": {"metaedge": "DlA"}}  # Disease → Anatomy (localizes)
+            ]
+        }},
+        
+        # Step 3: Lookup genes that are either upregulated or downregulated by the compound
+        {"$lookup": {
+            "from": "edges",
+            "localField": "id",  # Compound ID
+            "foreignField": "source",  # Source in edges (Compound → Gene)
+            "as": "compound_gene_edges",
+            "pipeline": [
+                {"$match": {
+                    "$or": [
+                        {"metaedge": "CuG"},  # Upregulates gene
+                        {"metaedge": "CdG"}   # Downregulates gene
                     ]
-                },
-                "compound_anatomy_condition_reverse": {
-                    "$cond": [
-                        {
-                            "$and": [
-                                { "$eq": ["$compound_name", "downregulate"] },  # Compound is downregulate
-                                { "$eq": ["$anatomy_name", "upregulate"] }  # Anatomy is upregulate
-                            ]
-                        },
-                        { "$in": [ "$disease_id", "$edges_in.source" ] },  # Check if disease localizes to anatomy
-                        False
-                    ]
-                }
-            }
-        },
-
-        # Step 4: Merge all the relevant compounds based on the conditions above
-        {
-            "$project": {
-                "_id": 0,
-                "merged_compounds": {
-                    "$concatArrays": [
-                        { "$cond": [{ "$ne": ["$compound_anatomy_condition", False] }, ["$compound_name"], []] },
-                        { "$cond": [{ "$ne": ["$compound_anatomy_condition_reverse", False] }, ["$compound_name"], []] }
-                    ]
-                }
-            }
-        }
+                }}
+            ]
+        }},
+        
+        # Step 4: Filter compounds to ensure they have both anatomy and gene edges
+        {"$match": {
+            "disease_anatomy_edges": {"$ne": []},  # Ensure anatomy edges exist
+            "compound_gene_edges": {"$ne": []},  # Ensure gene edges exist
+        }},
+        
+        # Step 5: Project compound names
+        {"$project": {
+            "_id": 0,  # Exclude the default _id field
+            "compound_name": "$name",  # Return compound name
+        }}
     ]
     
-
-# Deletes all documents in the collection
-def del_collection(collection_name):
-    collection = database[collection_name]
-    collection.delete_many({})
-
-#def main():
-    # Send a ping to confirm a successful connection
-    #try:
-        #client.admin.command('ping')
-        #print("Pinged your deployment. You successfully connected to MongoDB!")
-    #except Exception as e:
-        #print(e)
+    # Running the aggregation query
+    results = collection.aggregate(pipeline)
     
-    # Deletes all documents in the collection 'nodes' or 'edges'
-    # del_collection('nodes')
+    output = []
+    for result in results:
+        output.append(result['compound_name'])
+        print("Compound: ", result['compound_name'])
+    
+    return output
 
-    # Insert nodes and edges (Do not run this since we did it already)
-    # nodes = prepare_nodes()
-    # insert_edges_with_node(nodes)
-
-    # Perform query 1
-    #query_one("Disease::DOID:9206")
-
-
+# Test the query
+print(query_two())
+#query_one("Disease::DOID:0050425")
+query_two()
 # Parse command-line arguments
 parser = argparse.ArgumentParser(description="Run MongoDB Queries")
 parser.add_argument("-q1", action="store_true", help="Run Query 1 (requires -id)")
@@ -333,4 +289,6 @@ if args.q1 and args.id:
 #   query_two()
 else:
     print("Usage: Helio_rev.py -q1 -id <disease_id> OR Helio_rev.py -q2")
+
+
 
