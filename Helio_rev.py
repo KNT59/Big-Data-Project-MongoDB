@@ -196,105 +196,145 @@ def query_one(disease_id):
     results = collection.aggregate(pipeline)
     for r in results:
         print("Disease: ", r['diseases'])
-        output =("Disease: ", r['diseases'])
+        # output += ("Disease: ", r['diseases'])
         print("Compounds: ", r['compounds'])
-        output += ("Compounds: ", r['compounds'])
+        # output += ("Compounds: ", r['compounds'])
         print("Genes: ", r['genes'])
-        output += ("Genes: ", r['genes'])
+        # output += ("Genes: ", r['genes'])
         print("Anatomies: ", r['anatomies'])
-        output += ("Anatomies: ", r['anatomies'])
-
-    return output
-
 
 def query_two():
-    collection_name = 'edges'
+    collection_name = 'nodes'
     collection = database[collection_name]
 
+    
+    print("in query two")
     # Construct the aggregation pipeline
     pipeline = [
-        # Step 1: Match conditions for filtering
+        # Input documents will fetch specified compounds and anatomies with disease localized to it
         {
             "$match": {
                 "$or": [
-                    # Include compounds if it does not directly treat/palliate disease
-                    # and can upregulates/downregulates genes
                     {
                         "kind": "Compound",
                         "$and": [
                             {
-                                "edges_out": {
-                                    "$not": {
-                                        "$elemMatch": { 
-                                            "metaedge": { "$in": ["CtD", "CpD"] }
+                                "$and": [
+                                    {
+                                        "edges_out": {
+                                            "$not": {
+                                                "$elemMatch": { 
+                                                    "metaedge": "CtD"
+                                                }
+                                            }
+                                        }
+                                    },
+                                    {
+                                        "edges_out": {
+                                            "$not": {
+                                                "$elemMatch": {
+                                                    "metaedge": "CpD"
+                                                }
+                                            }
                                         }
                                     }
-                                }
+                                ]
                             },
                             {
-                                "edges_out": {
-                                    "$elemMatch": {
-                                        "metaedge": { "$in": ["CuG", "CdG"] }
-                                    }
-                                }
+                                "$or": [
+                                    {
+                                        "edges_out": {
+                                            "$elemMatch": { 
+                                                "metaedge": "CuG"
+                                            }
+                                        }
+                                    },
+                                    {
+                                        "edges_out": {
+                                            "$elemMatch": { 
+                                                "metaedge": "CdG"
+                                            }
+                                        }      
+                                    } 
+                                ]
                             }
                         ]
                     },
-                    # Include anatomies with upregulate or downregulate in edges_out
                     {
-                        "kind": "Anatomy",
-                        "edges_out": {
-                            "$elemMatch": {
-                                "metaedge": { "$in": ["AuG", "AdG"] }
-                            }
+                        "$and": [
+                            {
+                                "kind": "Anatomy"
+                            },
+                            {
+                                "edges_in": {
+                                    "$elemMatch": { 
+                                        "metaedge": "DlA"
+                                    }
+                                } 
+                            },
+                            {
+                                "$or": [
+                                    {
+                                        "edges_out": {
+                                            "$elemMatch": {
+                                                "metaedge": "AuG"
+                                            }
+                                        }
+                                    },
+                                    {
+                                        "edges_out": {
+                                            "$elemMatch": {
+                                                "metaedge": "AdG"
+                                            }
+                                        }
+                                    }
+                                ]
+                            }              
+                        ]
+                    }
+                    ]
+                }
+        },
+        {
+            "$lookup": {
+                "from": collection_name,  
+                "let": { 
+                    "edges": "$edges_out"  
+                },
+                "pipeline":[
+                    {
+                        "$match": {
+                            "kind": "Gene",
+                            "$and":[
+                                {
+                                    "$expr": {
+                                    "$in": ["$id", "$$edges.id"]  
+                                    }
+                                }
+                            ]
                         }
                     },
-                ]
+                    {
+                        "$match": {
+                            "$expr": {
+                            "$ne": ["$metaedge", { "$arrayElemAt": ["$$edges.metaedge", 0] }] 
+                            }
+                        }
+                    }
+                ],
+                "as": "matchedCompounds"
             }
         },
-        # Add conditional checks for upregulate, downregulate conditions and merge compounds
         {
-            "$addFields": {
-                "compound_up_anatomy_down": {
-                    "$cond": [
-                        {
-                            "$and": [
-                                { "$eq": ["$compound_name", "upregulate"] },  # Compound upregulate
-                                { "$eq": ["$anatomy_name", "downregulate"] }  # Anatomy ownregulate
-                            ]
-                        },
-                        { "$in": [ "$disease_id", "$edges_in.source" ] },  # Check if disease localizes to anatomy
-                        False
-                    ]
-                },
-                "compound_anatomy_condition_reverse": {
-                    "$cond": [
-                        {
-                            "$and": [
-                                { "$eq": ["$compound_name", "downregulate"] },  # Compound is downregulate
-                                { "$eq": ["$anatomy_name", "upregulate"] }  # Anatomy is upregulate
-                            ]
-                        },
-                        { "$in": [ "$disease_id", "$edges_in.source" ] },  # Check if disease localizes to anatomy
-                        False
-                    ]
-                }
-            }
-        },
-
-        # Step 4: Merge all the relevant compounds based on the conditions above
-        {
-            "$project": {
-                "_id": 0,
-                "merged_compounds": {
-                    "$concatArrays": [
-                        { "$cond": [{ "$ne": ["$compound_anatomy_condition", False] }, ["$compound_name"], []] },
-                        { "$cond": [{ "$ne": ["$compound_anatomy_condition_reverse", False] }, ["$compound_name"], []] }
-                    ]
-                }
+            '$project': {
+                "matchedCompounds"
             }
         }
     ]
+    results = collection.aggregate(pipeline)
+    print(results)
+    for r in results:
+        print(r)    
     
 
 # Deletes all documents in the collection
@@ -329,11 +369,12 @@ parser.add_argument("-id", type=str, help="Disease ID for Query 1")
 
 args = parser.parse_args()
 
+query_two()
 # Execute the selected query
-if args.q1 and args.id:
-    query_one(args.id)
-#if args.q2:
-#   query_two()
-else:
-    print("Usage: Helio_rev.py -q1 -id <disease_id> OR Helio_rev.py -q2")
+# if args.q1 and args.id:
+#     query_one(args.id)
+# #if args.q2:
+# #   query_two()
+# else:
+#     print("Usage: Helio_rev.py -q1 -id <disease_id> OR Helio_rev.py -q2")
 
