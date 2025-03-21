@@ -329,34 +329,35 @@ def query_two():
         }
     },
     {
-        "$addFields": {
-            "matchedNames": {
-                "$setUnion": [
-                    "$matchedNames",  # The matchedNames array
-                    []                # An empty array to "set" the unique elements from matchedNames
-                ]
-            }
+        "$unwind": "$matchedNames"
+    },
+    {
+        "$lookup": {
+            "from": collection_name,  # The collection to lookup (replace with actual collection name)
+            "localField": "matchedNames",  # Use the element in matchedNames as the lookup key
+            "foreignField": "id",    # The field in the foreign collection that matches (e.g., _id or name)
+            "as": "matchedDetails"         # Name for the result array from the lookup
         }
     },
+    {
+        "$unwind": "$matchedDetails"
+    },
     # Step 4: Project matchedNames field
-    # {
-    #     "$project": {
-    #         # "matchedNames": 1  # Only include matchedNames in the output
-    #         'matchedNames': 1
-    #     }
-    # }
+    {
+        "$project": {
+            '_id': 0,
+            'matchedDetails.name': 1
+        }
+    }
 ]
   
 
     results = collection.aggregate(pipeline)
-    print(results)
     i = 1
     for r in results:
-        print('print')
-        compounds = r['matchedNames']
-        for c in compounds:
-            print(i, ': ', c)
-            i +=1
+        name = r['matchedDetails']['name']
+        print(i, ': ', name)
+        i +=1
     
 
 # Deletes all documents in the collection
